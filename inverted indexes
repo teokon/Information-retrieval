@@ -1,0 +1,124 @@
+# INVERTED INDEX 1
+import os
+import spacy
+
+# Φόρτωση του μοντέλου spaCy για την αφαίρεση stop words και την επεξεργασία κειμένου
+nlp = spacy.load('en_core_web_sm')
+
+# Ορισμός μονοπατιού φακέλου που περιέχει τα αρχεία
+folder_path = r'C:\Users\konth\Desktop\Ανάκτηση Πληροφορίας 2024-2025\collection\docs'
+
+# Λεξικό για το ανεστραμμένο ευρετήριο
+inverted_index = {}
+existing_docs = set()  # Σύνολο για τα υπάρχοντα έγγραφα
+
+# Δημιουργία ανεστραμμένου ευρετηρίου
+for filename in os.listdir(folder_path):
+    file_path = os.path.join(folder_path, filename)
+    
+    # Ελέγχουμε αν το αρχείο είναι τύπου file και αναγνώσιμο
+    if os.path.isfile(file_path):
+        try:
+            # Χρήση του ονόματος αρχείου ως ID (χωρίς την επέκταση)
+            doc_id = filename.split('.')[0]  # Εξαγωγή ID (π.χ., 0001)
+            existing_docs.add(doc_id)  # Προσθέτουμε το ID στη λίστα των υπαρχόντων εγγράφων
+
+            # Ανάγνωση και προεπεξεργασία περιεχομένου
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read().lower()  # Μετατροπή σε πεζά
+                
+                # Χρήση του spaCy για την επεξεργασία του κειμένου
+                doc = nlp(content)
+                
+                tokens = [
+                    token.lemma_.strip() for token in doc
+                    if not token.is_stop and not token.is_punct and token.lemma_.strip()  # Αφαίρεση stop words και στίξης
+                ]
+
+                # Προσθήκη λέξεων στο ανεστραμμένο ευρετήριο
+                for token in set(tokens):  # Χρησιμοποιούμε set για να αποφύγουμε τις διπλές καταγραφές
+                    if token in inverted_index:
+                        inverted_index[token].append(doc_id)
+                    else:
+                        inverted_index[token] = [doc_id]
+        
+        except Exception as e:
+            print(f"Σφάλμα στην ανάγνωση του αρχείου {filename}: {e}")
+
+# Διαχείριση λείποντων κειμένων
+expected_ids = {f"{i:04d}" for i in range(1, len(existing_docs) + 1)}  # Δημιουργία αναμενόμενων IDs βάσει των υπαρχόντων εγγράφων
+missing_docs = expected_ids - existing_docs  # Υπολογισμός λειπόντων IDs
+
+# Εκτύπωση των λειπόντων κειμένων
+if missing_docs:
+    print(f"Λείπουν τα κείμενα με τα IDs: {', '.join(missing_docs)}")
+else:
+    print("Δεν λείπουν κείμενα.")
+
+# Εκτύπωση του ανεστραμμένου ευρετηρίου
+for term, doc_ids in inverted_index.items():
+    print(f"{term} -> [{', '.join(doc_ids)}]")
+
+
+
+
+
+# INVERTED INDEX 2 FOR VECTOR SPACE 
+
+
+# Λεξικό για το ανεστραμμένο ευρετήριο
+inverted_index_bm25 = {}
+missing_docs = set()  # Σύνολο για τα λείποντα έγγραφα
+existing_docs = set()  # Σύνολο για τα υπάρχοντα έγγραφα
+
+# Δημιουργία ανεστραμμένου ευρετηρίου
+for filename in os.listdir(folder_path):
+    file_path = os.path.join(folder_path, filename)
+    
+    # Ελέγχουμε αν το αρχείο είναι τύπου file και αναγνώσιμο
+    if os.path.isfile(file_path):
+        try:
+            # Χρήση του ονόματος αρχείου ως ID (χωρίς την επέκταση)
+            doc_id = filename.split('.')[0]  # Εξαγωγή ID (π.χ., 0001)
+            existing_docs.add(doc_id)  # Προσθέτουμε το ID στη λίστα των υπαρχόντων εγγράφων
+            # Ανάγνωση και προεπεξεργασία περιεχομένου
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read().lower()  # Μετατροπή σε πεζά
+                
+                # Χρήση του spaCy για την επεξεργασία του κειμένου
+                doc = nlp(content)
+                
+                tokens = [
+                    token.lemma_.strip() for token in doc
+                    if not token.is_stop and not token.is_punct and token.lemma_.strip()  # Αφαίρεση stop words και στίξης
+                ]
+
+                # Υπολογισμός της συχνότητας εμφάνισης κάθε λέξης στο τρέχον έγγραφο
+                token_freq = {}
+                for token in tokens:
+                    token_freq[token] = token_freq.get(token, 0) + 1
+
+                # Προσθήκη λέξεων στο ανεστραμμένο ευρετήριο με τη συχνότητά τους
+                for token, freq in token_freq.items():
+                    if token in inverted_index_bm25:
+                        inverted_index_bm25[token].append((doc_id, freq))
+                    else:
+                        inverted_index_bm25[token] = [(doc_id, freq)]
+        
+        except Exception as e:
+            print(f"Σφάλμα στην ανάγνωση του αρχείου {filename}: {e}")
+
+# Διαχείριση λείποντων κειμένων
+expected_ids = {f"{i:04d}" for i in range(1, len(existing_docs) + 1)}  # Δημιουργία αναμενόμενων IDs βάσει των υπαρχόντων εγγράφων
+missing_docs = expected_ids - existing_docs  # Υπολογισμός λειπόντων IDs
+
+# Εκτύπωση των λειπόντων κειμένων
+if missing_docs:
+    print(f"Λείπουν τα κείμενα με τα IDs: {', '.join(missing_docs)}")
+else:
+    print("Δεν λείπουν κείμενα.")
+
+# Εκτύπωση του ανεστραμμένου ευρετηρίου
+for term, doc_infos in inverted_index_bm25.items():
+    doc_info_str = ', '.join(f"{doc_id}/{freq}" for doc_id, freq in doc_infos)
+    print(f"{term} -> [{doc_info_str}]")
