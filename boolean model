@@ -1,0 +1,81 @@
+def infix_to_postfix(tokens):
+    precedence = {"AND": 2, "NOT": 3, "OR": 1}
+    stack = []
+    postfix = []
+    for token in tokens:
+        if token in precedence:
+            while stack and precedence.get(stack[-1], 0) >= precedence[token]:
+                postfix.append(stack.pop())
+            stack.append(token)
+        elif token == '(':
+            stack.append(token)
+        elif token == ')':
+            while stack and stack[-1] != '(':
+                postfix.append(stack.pop())
+            stack.pop()
+        else:
+            postfix.append(token)
+    while stack:
+        postfix.append(stack.pop())
+    return postfix
+
+# Συναρτήσεις για τις λογικές πράξεις
+def AND_op(set1, set2):
+    return set(set1) & set(set2)
+
+def OR_op(set1, set2):
+    return set(set1) | set(set2)
+
+def NOT_op(set1, all_docs):
+    return all_docs - set(set1)
+
+# προεπεξεργασία query
+def process_query(query, inverted_index, all_docs):
+    # Προεπεξεργασία της ερώτησης με spaCy
+    query = query.replace('(', '( ').replace(')', ' )').split()
+    processed_query = []
+    
+    # Επεξεργασία της query με spaCy
+    for term in query:
+        if term.lower() in {"and", "or", "not"}:
+            processed_query.append(term.upper())  # Μετατροπή σε κεφαλαία για πράξεις
+        elif term in {"(", ")"}:
+            processed_query.append(term)  # Προσθήκη παρενθέσεων ως έχουν
+        else:
+            # Χρήση spaCy για lemmatization και stop-word removal
+            doc = nlp(term)
+            lemmatized_term = [token.lemma_ for token in doc if not token.is_stop and not token.is_punct]
+            if lemmatized_term:
+                processed_query.append(lemmatized_term[0])  # Προσθέτουμε τον όρο με lemmatization
+
+    # Μετατροπή  query σε postfix
+    postfix_queue = infix_to_postfix(processed_query)
+    results_stack = []
+    
+    # Αξιολόγηση postfix έκφρασης
+    for token in postfix_queue:
+        if token not in {"AND", "OR", "NOT"}:
+            term_docs = inverted_index.get(token, [])
+            results_stack.append(set(term_docs))
+        elif token == "AND":
+            set1 = results_stack.pop()
+            set2 = results_stack.pop()
+            results_stack.append(AND_op(set1, set2))
+        elif token == "OR":
+            set1 = results_stack.pop()
+            set2 = results_stack.pop()
+            results_stack.append(OR_op(set1, set2))
+        elif token == "NOT":
+            set1 = results_stack.pop()
+            results_stack.append(NOT_op(set1, all_docs))
+
+    return results_stack.pop() if results_stack else set()
+
+# Παράδειγμα χρήσης
+all_docs = set(existing_docs)
+
+user_query = input("Δώστε την ερώτηση (με χρήση των τελεστών AND, OR, NOT): ")
+
+result = process_query(user_query, inverted_index, all_docs)
+
+print("Αποτελέσματα:", result)
