@@ -1,0 +1,59 @@
+import numpy as np
+
+# Συνάρτηση για την υπολογισμό του Cosine Similarity
+def cosine_similarity(query_vector, document_vector):
+    # Υπολογισμός του εσωτερικού γινομένου (dot product)
+    dot_product = np.dot(query_vector, document_vector)
+    
+    # Υπολογισμός του μήκους (Euclidean norm) του query και του document
+    norm_query = np.linalg.norm(query_vector)
+    norm_document = np.linalg.norm(document_vector)
+    
+    # Υπολογισμός του Cosine Similarity
+    if norm_query > 0 and norm_document > 0:
+        return dot_product / (norm_query * norm_document)
+    else:
+        return 0  
+
+# Συνάρτηση για να υπολογίσει την Cosine Similarity για όλα τα queries και documents
+def calculate_similarity_for_queries(query_vectors, document_vectors):
+    similarities = {}
+
+    # Για κάθε query, υπολογίζουμε την Cosine Similarity με κάθε document
+    for query_id, query_vector in query_vectors.items():
+        similarities[query_id] = {}
+        
+        # Μετατρέπουμε το query_vector σε numpy array, αν είναι dictionary
+        query_vector_array = np.array(list(query_vector.values())) if isinstance(query_vector, dict) else query_vector
+        
+        for doc_id, doc_vector in document_vectors.items():
+            # Μετατρέπουμε το doc_vector σε numpy array, αν είναι dictionary
+            doc_vector_array = np.array(list(doc_vector.values())) if isinstance(doc_vector, dict) else doc_vector
+            
+            # Υπολογισμός της Cosine Similarity μεταξύ query και document
+            similarity = cosine_similarity(query_vector_array, doc_vector_array)
+            similarities[query_id][doc_id] = similarity  # Αποθήκευση της ομοιότητας για το συγκεκριμένο query και document
+
+    return similarities
+    
+# Συνάρτηση για την ταξινόμηση των αποτελεσμάτων
+def sort_similarities(similarities):
+    sorted_similarities = {}
+
+    # Για κάθε query, ταξινομούμε τα documents κατά τη σειρά της ομοιότητας
+    for query_id, doc_similarities in similarities.items():
+        sorted_similarities[query_id] = sorted(doc_similarities.items(), key=lambda x: x[1], reverse=True)
+
+    return sorted_similarities
+
+
+
+similarities = calculate_similarity_for_queries(query_vectors, document_vectors)
+sorted_similarities = sort_similarities(similarities)
+
+
+print("\nSorted Similarities for each Query:")
+for query_id, doc_similarities in sorted_similarities.items():
+    print(f"Query {query_id + 1}:")
+    for doc_id, similarity in doc_similarities:
+        print(f"  Document {doc_id }: Similarity = {similarity:.4f}")
