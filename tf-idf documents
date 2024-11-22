@@ -1,0 +1,127 @@
+import math
+import numpy as np
+def calculate_document_lengths(inverted_index):
+    document_lengths = {}
+
+    # Iterate through the inverted index and calculate document length dynamically
+    for word, doc_list in inverted_index.items():
+        for doc_id, word_count in doc_list:
+            # Add word_count to the document's length
+            if doc_id in document_lengths:
+                document_lengths[doc_id] += word_count
+            else:
+                document_lengths[doc_id] = word_count
+
+    return document_lengths
+
+
+
+def calculate_term_frequencies(inverted_index, document_lengths):
+    term_frequencies = {}
+
+    # Iterate through each word in the inverted index
+    for word, doc_list in inverted_index.items():
+        term_frequencies[word] = {}
+
+        # For each document where the word appears, calculate the term frequency
+        for doc_id, word_count in doc_list:
+            document_length = document_lengths.get(doc_id, 0)  # Get document length (total number of tokens in the doc)
+
+            # Avoid division by zero and calculate TF
+            if document_length > 0:
+                tf = math.log(1 + word_count / document_length)
+                term_frequencies[word][doc_id] = tf
+
+    return term_frequencies
+    
+document_lengths = calculate_document_lengths(inverted_index_bm25)
+#εχω αποθηκεύσει το μεγεθος τον κειμένων σε μια λιστα 
+
+
+term_frequencies = calculate_term_frequencies(inverted_index_bm25, document_lengths)
+total_documents = len(existing_docs)
+# Print the term frequencies
+#for word, doc_tfs in term_frequencies.items():
+ #   for doc_id, tf in doc_tfs.items():
+  #      print(f"Term frequency of '{word}' in document {doc_id}: {tf:.4f}")
+
+def calculate_document_frequencies(inverted_index):
+    document_frequencies = {}  
+
+    
+    for word, doc_list in inverted_index.items():
+# ουσιαστικα μετρα τα doc_id,count
+        document_frequencies[word] = len(doc_list)
+
+
+    return document_frequencies
+    
+# υπολογιζω idf log (ολα τα κειμενα/κειμενα που περιεχουν την λεξη)
+def calculate_inverse_document_frequencies(inverted_index, total_documents):
+    idf_values = {}
+    document_frequencies = calculate_document_frequencies(inverted_index)
+
+    for word, df in document_frequencies.items():
+        if df > 0:
+            idf = math.log(total_documents / df)
+            idf_values[word] = idf
+        else:
+            idf_values[word] = 0  # To handle edge cases, though it should not occur
+
+    return idf_values
+
+# Calculate Document Frequencies
+document_frequencies = calculate_document_frequencies(inverted_index)
+
+# Calculate Inverse Document Frequencies
+idf_values = calculate_inverse_document_frequencies(inverted_index, total_documents)
+
+#print("\nInverse Document Frequencies (IDF):")
+#for word, idf in idf_values.items():
+   # print(f"Word: {word} -> IDF = {idf:.4f}")
+
+def calculate_tf_idf(inverted_index, document_lengths, total_documents):
+    # Calculate term frequencies (TF)
+    term_frequencies = calculate_term_frequencies(inverted_index, document_lengths)
+    
+    # Calculate inverse document frequencies (IDF)
+    idf_values = calculate_inverse_document_frequencies(inverted_index, total_documents)
+    
+    # Calculate TF-IDF
+    tf_idf_values = {}
+    for word, doc_tfs in term_frequencies.items():
+        tf_idf_values[word] = {}
+        for doc_id, tf in doc_tfs.items():
+            idf = idf_values.get(word, 0)  # Get IDF(w)
+            tf_idf_values[word][doc_id] = tf * idf  # TF-IDF(w, D) = TF(w, D) * IDF(w)
+    
+    return tf_idf_values
+tf_idf = calculate_tf_idf(inverted_index_bm25, document_lengths, total_documents)
+# Print TF-IDF values
+for word, doc_tfs in tf_idf.items():
+    for doc_id, tf_idf_value in doc_tfs.items():
+        print(f"TF-IDF of '{word}' in document {doc_id}: {tf_idf_value:.4f}")
+
+
+
+# Create a vocabulary of all unique words from the TF-IDF
+vocabulary = list(tf_idf.keys())  # This will give you all the words in the inverted index
+
+# Create a document vector for each document
+document_vectors = {}
+
+for doc_id in existing_docs:  # Iterate through all documents
+    # Initialize a vector with zeros
+    vector = np.zeros(len(vocabulary))  # Length of vector is the length of the vocabulary
+
+    # For each word in the vocabulary, set its TF-IDF value in the vector
+    for idx, word in enumerate(vocabulary):
+        # If the word exists in the current document, set its corresponding TF-IDF value
+        if doc_id in tf_idf.get(word, {}):
+            vector[idx] = tf_idf[word].get(doc_id, 0)
+    
+    document_vectors[doc_id] = vector
+
+# Print the document vectors
+#for doc_id, vector in document_vectors.items():
+ #   print(f"Document {doc_id} vector: {vector}")
