@@ -1,0 +1,89 @@
+import numpy as np
+import spacy
+import math
+# Φόρτωση του μοντέλου spaCy για αγγλικά
+nlp = spacy.load("en_core_web_sm")
+
+# Συνάρτηση για την προεπεξεργασία των queries
+def preprocess_queries(queries):
+    processed_queries = []
+    
+    for query in queries:
+        doc = nlp(query.lower())  # Μετατροπή σε πεζά και επεξεργασία με spaCy
+
+        # Φιλτράρουμε τις λέξεις (lemmatization, αφαίρεση stop words και στίξης)
+        tokens = [
+            token.lemma_.strip() for token in doc
+            if not token.is_stop and not token.is_punct and token.lemma_.strip()
+        ]
+
+        processed_queries.append(" ".join(tokens))  # Επανασύνθεση σε προεπεξεργασμένο query
+    
+    return processed_queries
+
+# Συνάρτηση για τον υπολογισμό TF-IDF για τα queries
+def calculate_query_term_frequencies(query, query_length):
+    term_frequencies = {}
+    
+    # Χωρίζουμε το query σε λέξεις
+    words = query.split()  # Χρησιμοποιούμε split() αν το query είναι ένα απλό κείμενο
+    for word in words:
+        term_frequencies[word] = term_frequencies.get(word, 0) + 1
+
+    # Υπολογισμός του TF για κάθε λέξη
+    for word in term_frequencies:
+          term_frequencies[word] = math.log(1 + (term_frequencies[word] / query_length))
+    
+    return term_frequencies
+
+# Συνάρτηση για υπολογισμό TF-IDF για τα queries
+def calculate_query_tf_idf(query, idf_values, vocabulary):
+    query_length = len(query.split())  # Αριθμός λέξεων στο query
+    query_tf = calculate_query_term_frequencies(query, query_length)
+    
+    # Δημιουργία του διανύσματος TF-IDF για το query
+    query_tf_idf = {}
+    
+    # Για κάθε λέξη στο vocabulary, δημιουργούμε το αντίστοιχο διανύσμα
+    for word in vocabulary:
+        # Αν η λέξη υπάρχει στο query, υπολογίζουμε το TF-IDF της
+        if word in query_tf:
+            tf = query_tf[word]
+            idf = idf_values.get(word, 0)  # Παίρνουμε το IDF για τη λέξη
+            query_tf_idf[word] = tf * idf  # Υπολογισμός TF-IDF για τη λέξη
+        else:
+            # Αν δεν υπάρχει η λέξη στο query, η τιμή είναι 0
+            query_tf_idf[word] = 0
+
+    return query_tf_idf
+
+
+# Διαβάζουμε τα queries από το αρχείο
+with open(r"C:\Users\konth\Downloads\Ανάκτηση Πληροφορίας 2024-2025 (2)\Ανάκτηση Πληροφορίας 2024-2025\collection\Queries.txt", 'r', encoding='utf-8') as f:
+    queries = [line.strip() for line in f.readlines()]
+
+
+
+# Προεπεξεργασία των queries
+processed_queries = preprocess_queries(queries)
+
+# Δημιουργία του query vectors με βάση το vocabulary
+query_vectors = {}
+
+for query_id, query in enumerate(processed_queries):
+    # Αρχικοποιούμε το διανύσμα του query με μηδενικές τιμές για κάθε λέξη στο vocabulary
+    query_vector = np.zeros(len(vocabulary))  # Μήκος του διανύσματος = μήκος του vocabulary
+    
+    # Υπολογισμός TF-IDF για το query
+    query_tf_idf = calculate_query_tf_idf(query, idf_values, vocabulary)
+    
+    # Για κάθε λέξη στο vocabulary, τοποθετούμε την αντίστοιχη τιμή TF-IDF στο διανύσμα
+    for idx, word in enumerate(vocabulary):
+        query_vector[idx] = query_tf_idf.get(word, 0)  # Αν η λέξη δεν υπάρχει, η τιμή είναι 0
+    
+    query_vectors[query_id] = query_vector  # Αποθήκευση του query vector
+
+# Εκτύπωση των TF-IDF διανυσμάτων για κάθε query
+print("\nTF-IDF Vectors for Queries:")
+for query_id, vector in query_vectors.items():
+    print(f"Query {query_id + 1}: {vector}")
