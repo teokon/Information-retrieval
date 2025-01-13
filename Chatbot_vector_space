@@ -1,0 +1,173 @@
+import os
+import spacy
+import math
+import numpy as np
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama.llms import OllamaLLM
+
+# Initialize spaCy and the language model
+nlp = spacy.load('en_core_web_sm')
+
+# Folder path for the documents
+folder_path = r'E:\NewDownloads\Ανάκτηση Πληροφορίας 2024-2025 (1)\Ανάκτηση Πληροφορίας 2024-2025\collection\docs'
+
+# Inverted index and other data structures
+inverted_index_bm25 = {}
+existing_docs = set()  # Set for existing documents
+
+# Create the inverted index (you should have this part from your earlier code)
+for filename in os.listdir(folder_path):
+    file_path = os.path.join(folder_path, filename)
+    if os.path.isfile(file_path):
+        try:
+            doc_id = filename.split('.')[0]
+            existing_docs.add(doc_id)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read().lower()
+                doc = nlp(content)
+                tokens = [token.lemma_.strip() for token in doc if not token.is_stop and not token.is_punct and token.lemma_.strip()]
+                token_freq = {}
+                for token in tokens:
+                    token_freq[token] = token_freq.get(token, 0) + 1
+                for token, freq in token_freq.items():
+                    if token in inverted_index_bm25:
+                        inverted_index_bm25[token].append((doc_id, freq))
+                    else:
+                        inverted_index_bm25[token] = [(doc_id, freq)]
+        except Exception as e:
+            print(f"Error processing file {filename}: {e}")
+
+# Functions for TF, IDF, and TF-IDF calculations (from your earlier code)
+def calculate_document_lengths(inverted_index):
+    document_lengths = {}
+    for word, doc_list in inverted_index.items():
+        for doc_id, word_count in doc_list:
+            document_lengths[doc_id] = document_lengths.get(doc_id, 0) + word_count
+    return document_lengths
+
+def calculate_term_frequencies(inverted_index, document_lengths):
+    term_frequencies = {}
+    for word, doc_list in inverted_index.items():
+        term_frequencies[word] = {}
+        for doc_id, word_count in doc_list:
+            document_length = document_lengths.get(doc_id, 0)
+            if document_length > 0:
+                tf = math.log(1 + word_count / document_length)
+                term_frequencies[word][doc_id] = tf
+    return term_frequencies
+
+def calculate_document_frequencies(inverted_index):
+    document_frequencies = {}
+    for word, doc_list in inverted_index.items():
+        document_frequencies[word] = len(doc_list)
+    return document_frequencies
+
+def calculate_inverse_document_frequencies(inverted_index, total_documents):
+    idf_values = {}
+    document_frequencies = calculate_document_frequencies(inverted_index)
+    for word, df in document_frequencies.items():
+        if df > 0:
+            idf = math.log(total_documents / df)
+            idf_values[word] = idf
+        else:
+            idf_values[word] = 0
+    return idf_values
+
+def calculate_tf_idf(inverted_index, document_lengths, total_documents):
+    term_frequencies = calculate_term_frequencies(inverted_index, document_lengths)
+    idf_values = calculate_inverse_document_frequencies(inverted_index, total_documents)
+    tf_idf_values = {}
+    for word, doc_tfs in term_frequencies.items():
+        tf_idf_values[word] = {}
+        for doc_id, tf in doc_tfs.items():
+            idf = idf_values.get(word, 0)
+            tf_idf_values[word][doc_id] = tf * idf
+    return tf_idf_values
+
+# Calculate the necessary TF-IDF values
+document_lengths = calculate_document_lengths(inverted_index_bm25)
+total_documents = len(existing_docs)
+tf_idf = calculate_tf_idf(inverted_index_bm25, document_lengths, total_documents)
+
+# Create a vocabulary from the inverted index
+vocabulary = list(tf_idf.keys())
+
+# Create a document vector for each document
+document_vectors = {}
+for doc_id in existing_docs:
+    vector = np.zeros(len(vocabulary))
+    for idx, word in enumerate(vocabulary):
+        if doc_id in tf_idf.get(word, {}):
+            vector[idx] = tf_idf[word].get(doc_id, 0)
+    document_vectors[doc_id] = vector
+
+# Function to preprocess the queries
+def preprocess_query(query):
+    doc = nlp(query.lower())
+    tokens = [token.lemma_.strip() for token in doc if not token.is_stop and not token.is_punct and token.lemma_.strip()]
+    return " ".join(tokens)
+
+# Function to calculate the TF-IDF for a query
+def calculate_query_tf_idf(query, idf_values, vocabulary):
+    query_length = len(query.split())
+    query_tf = calculate_query_term_frequencies(query, query_length)
+    query_tf_idf = {}
+    for word in vocabulary:
+        if word in query_tf:
+            tf = query_tf[word]
+            idf = idf_values.get(word, 0)
+            query_tf_idf[word] = tf * idf
+        else:
+            query_tf_idf[word] = 0
+    return query_tf_idf
+
+# Function to calculate cosine similarity
+def cosine_similarity(query_vector, document_vector):
+    dot_product = np.dot(query_vector, document_vector)
+    norm_query = np.linalg.norm(query_vector)
+    norm_document = np.linalg.norm(document_vector)
+    if norm_query > 0 and norm_document > 0:
+        return dot_product / (norm_query * norm_document)
+    else:
+        return 0
+
+
+def chat_with_bot(query):
+    processed_query = preprocess_query(query)
+    query_tf_idf = calculate_query_tf_idf(processed_query, idf_values, vocabulary)
+
+    # Create a vector for the query
+    query_vector = np.zeros(len(vocabulary))
+    for idx, word in enumerate(vocabulary):
+        query_vector[idx] = query_tf_idf.get(word, 0)
+
+    # Calculate cosine similarities between the query vector and all document vectors
+    similarities = {}
+    for doc_id, doc_vector in document_vectors.items():
+        similarity = cosine_similarity(query_vector, doc_vector)
+        similarities[doc_id] = similarity
+
+    # Get the top 5 relevant documents based on cosine similarity
+    top_5_documents = sorted(similarities.items(), key=lambda x: x[1], reverse=True)[:5]
+    top_5_doc_ids = [doc_id for doc_id, _ in top_5_documents]
+
+    # Fetch the content of the top 5 relevant documents
+    relevant_docs_content = ""
+    for doc_id in top_5_doc_ids:
+        with open(os.path.join(folder_path, doc_id), 'r', encoding='utf-8') as f:
+            relevant_docs_content += f.read() + "\n"
+
+    # Use Ollama to answer the query based on the retrieved documents
+    model = OllamaLLM(model="llama3.2")
+    prompt = ChatPromptTemplate.from_template("""Question: {question}
+
+Answer based on the following documents: {document}""")
+    chain = prompt | model
+    response = chain.invoke({"question": query, "document": relevant_docs_content})
+
+    return response
+
+# Example query
+user_input = "How effective are inhalations of mucolytic agents in the treatment of CF patients"
+response = chat_with_bot(user_input)
+print(f"Chatbot response: {response}")
