@@ -1,0 +1,158 @@
+import os
+import spacy
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama.llms import OllamaLLM
+
+# Φόρτωση του μοντέλου spaCy για την αφαίρεση stop words και την επεξεργασία κειμένου
+nlp = spacy.load('en_core_web_sm')
+
+# Ορισμός μονοπατιού φακέλου που περιέχει τα αρχεία
+folder_path = r'E:\NewDownloads\Ανάκτηση Πληροφορίας 2024-2025 (1)\Ανάκτηση Πληροφορίας 2024-2025\collection\docs'
+
+# Λεξικό για το ανεστραμμένο ευρετήριο
+inverted_index = {}
+existing_docs = set()  # Σύνολο για τα υπάρχοντα έγγραφα
+
+# Δημιουργία ανεστραμμένου ευρετηρίου
+for filename in os.listdir(folder_path):
+    file_path = os.path.join(folder_path, filename)
+    
+    if os.path.isfile(file_path):
+        try:
+            doc_id = filename.split('.')[0]  # Εξαγωγή ID (π.χ., 0001)
+            existing_docs.add(doc_id)  # Προσθέτουμε το ID στη λίστα των υπαρχόντων εγγράφων
+
+            # Ανάγνωση και προεπεξεργασία περιεχομένου
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read().lower()  # Μετατροπή σε πεζά
+                
+                doc = nlp(content)
+                
+                tokens = [
+                    token.lemma_.strip() for token in doc
+                    if not token.is_stop and not token.is_punct and token.lemma_.strip()  # Αφαίρεση stop words και στίξης
+                ]
+
+                # Προσθήκη λέξεων στο ανεστραμμένο ευρετήριο
+                for token in set(tokens):
+                    if token in inverted_index:
+                        inverted_index[token].append(doc_id)
+                    else:
+                        inverted_index[token] = [doc_id]
+        
+        except Exception as e:
+            print(f"Σφάλμα στην ανάγνωση του αρχείου {filename}: {e}")
+
+def infix_to_postfix(tokens):
+    precedence = {"AND": 2, "NOT": 3, "OR": 1}
+    stack = []
+    postfix = []
+    for token in tokens:
+        if token in precedence:
+            while stack and precedence.get(stack[-1], 0) >= precedence[token]:
+                postfix.append(stack.pop())
+            stack.append(token)
+        elif token == '(':
+            stack.append(token)
+        elif token == ')':
+            while stack and stack[-1] != '(':
+                postfix.append(stack.pop())
+            stack.pop()
+        else:
+            postfix.append(token)
+    while stack:
+        postfix.append(stack.pop())
+    return postfix
+
+# Συναρτήσεις για τις λογικές πράξεις
+def AND_op(set1, set2):
+    return set(set1) & set(set2)
+
+def OR_op(set1, set2):
+    return set(set1) | set(set2)
+
+def NOT_op(set1, all_docs):
+    return all_docs - set(set1)
+
+# Συνάρτηση για την επεξεργασία της query με Boolean μοντέλο
+def process_query(query, inverted_index, all_docs):
+    query = query.replace('(', '( ').replace(')', ' )').split()
+    processed_query = []
+
+    for term in query:
+        if term.lower() in {"and", "or", "not"}:
+            processed_query.append(term.upper())  # Uppercase logical operators
+        elif term in {"(", ")"}:
+            processed_query.append(term)  # Retain parentheses as is
+        else:
+            doc = nlp(term)
+            lemmatized_term = [token.lemma_ for token in doc if not token.is_stop and not token.is_punct]
+            if lemmatized_term:
+                processed_query.append(lemmatized_term[0])  # Add lemmatized term
+    
+    postfix_queue = infix_to_postfix(processed_query)
+    results_stack = []
+
+    for token in postfix_queue:
+        if token not in {"AND", "OR", "NOT"}:
+            term_docs = inverted_index.get(token, [])
+            results_stack.append(set(term_docs))
+        elif token == "AND":
+            set1 = results_stack.pop()
+            set2 = results_stack.pop()
+            results_stack.append(AND_op(set1, set2))
+        elif token == "OR":
+            set1 = results_stack.pop()
+            set2 = results_stack.pop()
+            results_stack.append(OR_op(set1, set2))
+        elif token == "NOT":
+            set1 = results_stack.pop()
+            results_stack.append(NOT_op(set1, all_docs))
+
+    return results_stack.pop() if results_stack else set()
+
+# Συνάρτηση για την επιστροφή των εγγράφων από τα IDs
+def fetch_documents_from_ids(doc_ids, folder_path):
+    docs = []
+    for doc_id in doc_ids:
+        file_path = os.path.join(folder_path, doc_id)
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                docs.append(f.read())
+    return docs
+
+# Δημιουργία του LangChain prompt και σύνδεση με το μοντέλο OllamaLLM
+template = """Question: {question}
+
+Answer: Let's think step by step."""
+
+prompt = ChatPromptTemplate.from_template(template)
+
+model = OllamaLLM(model="llama3.2")
+
+chain = prompt | model
+
+# Συνάρτηση για την συνολική διαχείριση της συνομιλίας
+def chat_with_bot(boolean_query, question):
+    # Step 1: Process the Boolean query to retrieve document IDs
+    result_doc_ids = process_query(boolean_query, inverted_index, existing_docs)
+    
+    # Step 2: Retrieve the first 5 relevant documents based on the query
+    if result_doc_ids:
+        relevant_doc_ids = list(result_doc_ids)[:5]  # Limit to the first 5 documents
+        documents = fetch_documents_from_ids(relevant_doc_ids, folder_path)
+        document_text = " ".join(documents)  # Concatenate the document contents
+        
+        # Step 3: Ask Ollama to generate an answer based on the retrieved documents
+        answer_query = f"Based on the following documents: {document_text} Answer the question: {question}"
+        answer_response = chain.invoke({"question": answer_query})
+        
+        return answer_response
+    else:
+        return "No relevant documents found."
+
+# Παράδειγμα χρήσης
+boolean_query = "analysis AND sera"
+question = "What is the role of aerosols in the treatment of lung disease in CF patients"
+answer = chat_with_bot(boolean_query, question)
+print(f"Final answer: {answer}")
