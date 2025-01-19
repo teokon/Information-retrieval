@@ -87,6 +87,7 @@ def calculate_tf_idf(inverted_index, document_lengths, total_documents):
 # Calculate the necessary TF-IDF values
 document_lengths = calculate_document_lengths(inverted_index_bm25)
 total_documents = len(existing_docs)
+idf_values = calculate_inverse_document_frequencies(inverted_index_bm25, total_documents)
 tf_idf = calculate_tf_idf(inverted_index_bm25, document_lengths, total_documents)
 
 # Create a vocabulary from the inverted index
@@ -107,6 +108,19 @@ def preprocess_query(query):
     tokens = [token.lemma_.strip() for token in doc if not token.is_stop and not token.is_punct and token.lemma_.strip()]
     return " ".join(tokens)
 
+def calculate_query_term_frequencies(query, query_length):
+    term_frequencies = {}
+    
+    # Χωρίζουμε το query σε λέξεις
+    words = query.split()  # Χρησιμοποιούμε split() αν το query είναι ένα απλό κείμενο
+    for word in words:
+        term_frequencies[word] = term_frequencies.get(word, 0) + 1
+
+    # Υπολογισμός του TF για κάθε λέξη
+    for word in term_frequencies:
+          term_frequencies[word] = math.log(1 + (term_frequencies[word] / query_length))
+    
+    return term_frequencies
 # Function to calculate the TF-IDF for a query
 def calculate_query_tf_idf(query, idf_values, vocabulary):
     query_length = len(query.split())
@@ -168,6 +182,6 @@ Answer based on the following documents: {document}""")
     return response
 
 # Example query
-user_input = "How effective are inhalations of mucolytic agents in the treatment of CF patients"
+user_input = "What is the role of aerosols in the treatment of lung disease in CF patients"
 response = chat_with_bot(user_input)
 print(f"Chatbot response: {response}")
